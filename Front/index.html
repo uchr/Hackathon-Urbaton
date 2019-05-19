@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Тепловая карта шума и озеленения</title>
+    <style>
+      /* Always set the map height explicitly to define the size of the div
+       * element that contains the map. */
+      #map {
+        height: 100%;
+      }
+      /* Optional: Makes the sample page fill the window. */
+      html, body {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="map"></div>
+      <script src='./Data/graph_dump.js'></script>
+      <script src='./Data/cityPolygon.js'></script>
+      <script>
+
+      /*
+       * This demo illustrates the coordinate system used to display map tiles in the
+       * API.
+       *
+       * Tiles in Google Maps are numbered from the same origin as that for
+       * pixels. For Google's implementation of the Mercator projection, the origin
+       * tile is always at the northwest corner of the map, with x values increasing
+       * from west to east and y values increasing from north to south.
+       *
+       * Try panning and zooming the map to see how the coordinates change.
+       */
+
+      /** @constructor */
+      function CoordMapType(tileSize) {
+        this.tileSize = tileSize;
+      }
+
+      CoordMapType.prototype.getTile = function(coord, zoom, ownerDocument) {
+        var div = ownerDocument.createElement('div');
+        div.innerHTML = coord;
+        div.style.width = this.tileSize.width + 'px';
+        div.style.height = this.tileSize.height + 'px';
+        div.style.fontSize = '10';
+        div.style.borderStyle = 'solid';
+        div.style.borderWidth = '1px';
+        div.style.borderColor = '#AAAAAA';
+        return div;
+      };
+
+      function initMap() {
+        var barProstor = new google.maps.LatLng(55.029386, 82.925667);
+
+        var map = new google.maps.Map(document.getElementById('map'), {
+          zoom: 13,
+          center: barProstor
+        });
+
+        // Insert this overlay map type as the first overlay map type at
+        // position 0. Note that all overlay map types appear on top of
+        // their parent base map.
+        //map.overlayMapTypes.insertAt(0, new CoordMapType(new google.maps.Size(256, 256)));
+
+        var overlay = new google.maps.ImageMapType({
+            getTileUrl: function(coord, zoom) {
+              var url = "Data/Tiles/green_tiles_scaled/" + coord.x.toString() + "_" + coord.y.toString() + "_" + zoom.toString() + ".png";
+              return url; 
+            },
+            tileSize: new google.maps.Size(256, 256),
+            isPng: true,
+            opacity: 0.8
+        });
+        map.overlayMapTypes.push(overlay);
+
+        // Polygons
+        var leftBottomTile = {x: 5975, y: 2598};
+        var rightUpperTile = {x: 5990, y: 2582};
+        var refZoom = 13;
+
+        var TILE_SIZE = 256;
+        var scale = 1 << refZoom;
+        var leftBottomWorld = {x: leftBottomTile.x * TILE_SIZE / scale, y: leftBottomTile.y * TILE_SIZE / scale};
+        var rightUpperWorld = {x: rightUpperTile.x * TILE_SIZE / scale, y: rightUpperTile.y * TILE_SIZE / scale};
+
+        var cityBounds = {
+          min: worldTolatLng(leftBottomWorld),
+          max: worldTolatLng(rightUpperWorld),
+        };
+        
+        var info = {
+          leftBottomTileX: leftBottomTile.x,
+          leftBottomTileY: leftBottomTile.y,
+          rightUpperTileX: rightUpperTile.x,
+          rightUpperTileY: rightUpperTile.y,
+          leftBottomLat: worldTolatLng(leftBottomWorld).lat,
+          leftBottomLng: worldTolatLng(leftBottomWorld).lng,
+          rightUpperLat: worldTolatLng(rightUpperWorld).lat,
+          rightUpperLng: worldTolatLng(rightUpperWorld).lng,
+          numTileX: (rightUpperTile.x - leftBottomTile.x),
+          numTileY: (leftBottomTile.y - rightUpperTile.y)
+        };
+        console.log(info);
+
+        var cityBoundsCoords = [
+          {lat: cityBounds.min.lat, lng: cityBounds.min.lng},
+          {lat: cityBounds.min.lat, lng: cityBounds.max.lng},
+          {lat: cityBounds.max.lat, lng: cityBounds.max.lng},
+          {lat: cityBounds.max.lat, lng: cityBounds.min.lng},
+          {lat: cityBounds.min.lat, lng: cityBounds.min.lng}
+        ];
+        
+        /*
+        var cityBoundsPolyline = new google.maps.Polyline({
+          path: cityBoundsCoords,
+          geodesic: true,
+          strokeColor: '#FF0000',
+          strokeOpacity: 1.0,
+          strokeWeight: 2
+        });
+        cityBoundsPolyline.setMap(map);*/
+
+        var cityPolygonPolyline = new google.maps.Polyline({
+          path: cityPolygon,
+          geodesic: true,
+          strokeColor: '#FF00FF',
+          strokeOpacity: 1.0,
+          strokeWeight: 2
+        });
+        cityPolygonPolyline.setMap(map);
+
+        // Roads
+        function getRandomInt(max) {
+          return Math.floor(Math.random() * Math.floor(max));
+        }
+
+        // Temporary solutions
+        //{"motorway", 2},
+        //{"trunk", 2},
+        //{"primary", 5},
+        //{"secondary", 4},
+        //{"tertiary", 3},
+        //{"unclassified", 1},
+        //{"residential", 1},
+
+        for (var i = 0; i < graph_dump.length; ++i) {
+          var weight = 1;
+          if (graph_dump[i].type == "unclassified" || graph_dump[i].type == "residential")
+            weight = 1;
+          if (graph_dump[i].type == "motorway" || graph_dump[i].type == "trunk")
+            weight = 2;
+          if (graph_dump[i].type == "tertiary")
+            weight = 3;
+          if (graph_dump[i].type == "secondary")
+            weight = 4;
+          if (graph_dump[i].type == "primary")
+            weight = 5;
+
+          var road = graph_dump[i];
+          var roadPoints = [];
+          for (var j = 0; j < road.points.length; ++j) {
+            roadPoints.push({lat: parseFloat(road.points[j][0]), lng: parseFloat(road.points[j][1])})
+          }
+          
+          var roadPolyline = new google.maps.Polyline({
+            path: roadPoints,
+            geodesic: true,
+            strokeColor: '#0000FF',
+            strokeOpacity: 0.1,
+            strokeWeight: weight * 5
+          });
+          roadPolyline.setMap(map);
+        }
+
+        // Coord info
+        /*var coordInfoWindow = new google.maps.InfoWindow();
+        coordInfoWindow.setContent(createInfoWindowContent(barProstor, map.getZoom()));
+        coordInfoWindow.setPosition(barProstor);
+        coordInfoWindow.open(map);
+
+        map.addListener('zoom_changed', function() {
+          coordInfoWindow.setContent(createInfoWindowContent(barProstor, map.getZoom()));
+          coordInfoWindow.open(map);
+        });
+
+        function createInfoWindowContent(latLng, zoom) {
+          var scale = 1 << zoom;
+
+          var worldCoordinate = latLngToWorld(latLng);
+
+          var pixelCoordinate = new google.maps.Point(
+              Math.floor(worldCoordinate.x * scale),
+              Math.floor(worldCoordinate.y * scale));
+
+          var tileCoordinate = new google.maps.Point(
+              Math.floor(worldCoordinate.x * scale / TILE_SIZE),
+              Math.floor(worldCoordinate.y * scale / TILE_SIZE));
+
+          return [
+            'BarProstor',
+            'LatLng: ' + latLng,
+            'Zoom level: ' + zoom,
+            'World Coordinate: ' + worldCoordinate,
+            'Pixel Coordinate: ' + pixelCoordinate,
+            'Tile Coordinate: ' + tileCoordinate
+          ].join('<br>');
+        }*/
+
+        // The mapping between latitude, longitude and pixels is defined by the web
+        // mercator projection.
+        function latLngToWorld(latLng) {
+          var siny = Math.sin(latLng.lat() * Math.PI / 180);
+
+          // Truncating to 0.9999 effectively limits latitude to 89.189. This is
+          // about a third of a tile past the edge of the world tile.
+          siny = Math.min(Math.max(siny, -0.9999), 0.9999);
+
+          return new google.maps.Point(
+              TILE_SIZE * (0.5 + latLng.lng() / 360),
+              TILE_SIZE * (0.5 - Math.log((1 + siny) / (1 - siny)) / (4 * Math.PI)));
+        }
+
+        function worldTolatLng(point) {
+          var lng = point.x / 256 * 360 - 180;
+          var n = Math.PI - 2 * Math.PI * point.y / 256;
+          var lat = (180 / Math.PI * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n))));
+          return {lat: lat, lng: lng};
+        }
+      }
+    </script>
+    <script async defer
+    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBWlKsdpUpzt62H3XVwKnHOaaOB8a1W29o&callback=initMap">
+    </script>
+  </body>
+</html>
